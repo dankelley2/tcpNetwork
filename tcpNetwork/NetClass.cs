@@ -16,7 +16,6 @@ namespace tcpNet
         private Random identity;
         public bool keepHistory = false;
         public List<Message> messageHistory = new List<Message>();
-        public ClientList CList = new ClientList();
         public string HostName;
         public static string MyIP;
         //Basic Constructor
@@ -169,31 +168,19 @@ namespace tcpNet
             string str_msgId = msgId.ToString().PadLeft(7, '0');
 
             string message = "S|" + str_msgId + "|" + type + "|" + GetMyIP().ToString() + "|" + data.Replace("|", "") + "|E";
-            
+
             try
             {
                 T = new TcpClient();
                 IPE = new IPEndPoint(IPAddress.Parse(IP), this.port);
-                try
-                {
-                    T.Connect(IPE);
-                    N = T.GetStream();
-                    byte[] Buffer = UTIL.streamTools.Zip(message);
-                    N.Write(Buffer, 0, Buffer.Length);
-                    N.Flush();
-                    //Log to Message History
-                    messageHistory.Add(new Message(str_msgId, type, GetMyIP().ToString(), data.Replace("|", "")));
-                }
-                catch (SocketException se)
-                {
-                    Console.WriteLine("Error: " + se.Message);
-                    if (CList.GetClientByIP(IP) != null)
-                    {
-                        Client badClient = CList.GetClientByIP(IP);
-                        Console.WriteLine("{0} is no longer with us.",badClient.NAME);
-                        CList.Clients.Remove(badClient);
-                    }
-                }
+                T.Connect(IPE);
+                N = T.GetStream();
+                byte[] Buffer = UTIL.streamTools.Zip(message);
+                N.Write(Buffer, 0, Buffer.Length);
+                N.Flush();
+                //Log to Message History
+                messageHistory.Add(new Message(str_msgId, type, GetMyIP().ToString(), data.Replace("|", "")));
+
             }
             finally
             {
@@ -209,6 +196,49 @@ namespace tcpNet
 
         }
 
+        public void SendData(string[] IPList, string data, string type)
+        {
+            TcpClient T = null;
+            IPEndPoint IPE = null;
+            NetworkStream N = null;
+            foreach (string IP in IPList)
+            {
+                int msgId = identity.Next(9999999);
+                string str_msgId = msgId.ToString().PadLeft(7, '0');
+                string message = "S|" + str_msgId + "|" + type + "|" + GetMyIP().ToString() + "|" + data.Replace("|", "") + "|E";
+
+                try
+                {
+                    T = new TcpClient();
+                    IPE = new IPEndPoint(IPAddress.Parse(IP), this.port);
+                    try
+                    {
+                        T.Connect(IPE);
+                        N = T.GetStream();
+                        byte[] Buffer = UTIL.streamTools.Zip(message);
+                        N.Write(Buffer, 0, Buffer.Length);
+                        N.Flush();
+                    }
+                    catch (SocketException se)
+                    {
+                        Console.WriteLine("Error: " + se.Message);
+                    }
+                }
+                finally
+                {
+                    if (N != null)
+                    {
+                        N.Dispose();
+                    }
+                    if (T != null)
+                    {
+                        T.Dispose();
+                    }
+                }
+            }
+
+        }
+
         public void SendData(List<string> IPList, string data, string type)
         {
             TcpClient T = null;
@@ -216,10 +246,6 @@ namespace tcpNet
             NetworkStream N = null;
             foreach (string IP in IPList)
             {
-                if (IP == GetMyIP().ToString())
-                {
-                    continue;
-                }
                 int msgId = identity.Next(9999999);
                 string str_msgId = msgId.ToString().PadLeft(7, '0');
                 string message = "S|" + str_msgId + "|" + type + "|" + GetMyIP().ToString() + "|" + data.Replace("|", "") + "|E";
@@ -284,135 +310,6 @@ namespace tcpNet
                 this.Type = Type;
                 this.Sender = Sender;
                 this.Data = Data;
-            }
-        }
-
-
-
-        public class Client
-        {
-            public string IP;
-            public string NAME;
-            public bool[] ClientAttr = new bool[10];
-            public List<Message> MESSAGES = new List<Message>();
-
-            public Client(string IP,string NAME)
-            {
-                this.IP = IP;
-                this.NAME = NAME;
-            }
-            
-        }
-
-        public class ClientList : IEnumerable
-        {
-            public List<Client> Clients;
-
-            public ClientList()
-            {
-                Clients = new List<Client>();
-            }
-
-            public bool IsNewClient(Message M)
-            {
-                foreach (Client C in this.Clients)
-                {
-                    if (C.IP == M.Sender)
-                    {
-                        return false;
-                    }
-                }
-                    return true;
-            }
-            public Client AddNewClient(string IP, String Name)
-            {
-                if (this.GetClientByIP(IP) != null)
-                {
-                    this.Clients.Remove(GetClientByIP(IP));
-                }
-                this.Clients.Add(new Client(IP, Name));
-                return this.Clients[this.Clients.Count - 1];
-
-            }
-            public Client GetClientByMessage(Message m)
-            {
-                if (!(IsNewClient(m)))
-                {
-                    foreach (Client C in Clients)
-                    {
-                        if (C.IP == m.Sender)
-                        {
-                            return C;
-                        }
-                    }
-                }
-            return null;
-                
-            }
-            public Client GetClientByIP(string IP)
-            {
-                foreach (Client C in Clients)
-                {
-                    if (C.IP == IP)
-                    {
-                        return C;
-                    }
-                }
-                
-                return null;
-            }
-            public List<string> GetAllClientIPs()
-            {
-                List<string> IPList = new List<string>();
-                foreach (Client C in Clients)
-                {
-                    if (C.IP == GetMyIP().ToString())
-                    {
-                        continue;
-                    }
-                    IPList.Add(C.IP);
-                }
-
-                return IPList;
-            }
-            public List<string> GetAllClientIPsByAttr(bool boolMatch, int attrNum)
-            {
-                List<string> IPList = new List<string>();
-                foreach (Client C in Clients)
-                {
-                    if (C.ClientAttr[attrNum] == boolMatch)
-                    {
-                        IPList.Add(C.IP);
-                    }
-                }
-                return IPList;
-            }
-            public IEnumerator GetEnumerator()
-            {
-                return new addrEnum(this);
-            }
-            private class addrEnum : IEnumerator
-            {
-                private int position = -1;
-                private ClientList instance;
-                public addrEnum(ClientList inst)
-                {
-                    this.instance = inst;
-                }
-
-                public object Current
-                {
-                    get { return instance.Clients[position]; }
-                }
-                public bool MoveNext()
-                {
-                                position++;
-                                return (position < instance.Clients.Count);
-                }
-                public void Reset()
-                {
-                    position = -1;
-                }
             }
         }
 
